@@ -58,7 +58,7 @@ final class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(Array(excludedBundleIDs), forKey: "excludedApps"); rebuildEngine() }
     }
 
-    @Published var bufferFrames: Int = UserDefaults.standard.object(forKey: "bufferFrames") as? Int ?? 512 {
+    @Published var bufferFrames: Int = UserDefaults.standard.object(forKey: "bufferFrames") as? Int ?? 256 {
         didSet { UserDefaults.standard.set(bufferFrames, forKey: "bufferFrames"); engine.setIOBufferFrames(bufferFrames) }
     }
 

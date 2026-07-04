@@ -20,7 +20,7 @@ final class ProcessTapEngine {
 
     private(set) var state: State = .stopped
     private(set) var targetDeviceID: AudioObjectID = 0
-    private(set) var ioBufferFrames: Int = 512
+    private(set) var ioBufferFrames: Int = 256
 
     /// Approximate added latency in seconds (tap + one IO buffer round trip).
     var estimatedLatency: Double {
