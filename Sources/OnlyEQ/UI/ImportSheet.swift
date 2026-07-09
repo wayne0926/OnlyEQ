@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct ImportSheet: View {
     @EnvironmentObject var state: AppState
     @Environment(\.dismiss) private var dismiss
+    let profileSuggestion: ProfileSuggestion?
 
     enum Tab: String, CaseIterable { case drop = "Drop file", paste = "Paste text", browse = "Browse online" }
     @State private var tab: Tab = .drop
@@ -22,6 +23,13 @@ struct ImportSheet: View {
     @State private var selectedEntry: OnlineEntry?
     @State private var previewPreset: EQPreset?
     @State private var isFetchingPreview = false
+    @State private var attemptedAutomaticSelection = false
+
+    init(profileSuggestion: ProfileSuggestion? = nil) {
+        self.profileSuggestion = profileSuggestion
+        _tab = State(initialValue: profileSuggestion == nil ? .drop : .browse)
+        _searchText = State(initialValue: profileSuggestion?.searchQuery ?? "")
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -47,7 +55,10 @@ struct ImportSheet: View {
         }
         .frame(width: 560, height: 470)
         .task(id: source) {
-            if tab == .browse { await state.onlineDB.load(source: source) }
+            if tab == .browse {
+                await state.onlineDB.load(source: source)
+                selectSuggestedResultIfNeeded()
+            }
         }
         .onChange(of: tab) { _, newTab in
             if newTab == .browse { Task { await state.onlineDB.load(source: source) } }
@@ -155,6 +166,23 @@ struct ImportSheet: View {
 
     private var browseTab: some View {
         VStack(spacing: 8) {
+            if let profileSuggestion {
+                HStack(spacing: 7) {
+                    Image(systemName: "headphones.circle.fill").foregroundStyle(Color.accentColor)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("New headphones detected")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text(profileSuggestion.deviceName)
+                            .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Spacer()
+                    Text("Review before applying")
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 7)
+                .background(RoundedRectangle(cornerRadius: 7).fill(Color.accentColor.opacity(0.09)))
+            }
+
             HStack {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("Search \(source == .peqdb ? "peqdb" : "AutoEq") headphones…", text: $searchText)
@@ -193,6 +221,24 @@ struct ImportSheet: View {
             let haystack = "\(entry.model) \(entry.reviewer)".lowercased()
             return terms.allSatisfy { haystack.contains($0) }
         }
+    }
+
+    private func selectSuggestedResultIfNeeded() {
+        guard profileSuggestion != nil, !attemptedAutomaticSelection else { return }
+        guard let best = filteredEntries.max(by: {
+            HeadphoneNameMatcher.score(query: searchText, candidate: $0.model)
+                < HeadphoneNameMatcher.score(query: searchText, candidate: $1.model)
+        }) else {
+            if source == .peqdb {
+                source = .autoEq
+            } else {
+                attemptedAutomaticSelection = true
+            }
+            return
+        }
+        attemptedAutomaticSelection = true
+        selectedEntry = best
+        fetchPreview()
     }
 
     private var resultsList: some View {
@@ -306,9 +352,13 @@ struct ImportSheet: View {
             Spacer()
             Button("Cancel") { dismiss() }
                 .keyboardShortcut(.cancelAction)
-            Button("Apply") {
+            Button(profileSuggestion == nil ? "Apply" : "Use for This Device") {
                 if let staged {
-                    state.apply(staged.preset)
+                    if let profileSuggestion {
+                        state.assignSuggestedPreset(staged.preset, to: profileSuggestion)
+                    } else {
+                        state.apply(staged.preset)
+                    }
                     dismiss()
                 }
             }

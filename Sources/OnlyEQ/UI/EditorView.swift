@@ -3,15 +3,24 @@ import Combine
 import AppKit
 import QuartzCore
 
+private struct ImportPresentation: Identifiable {
+    let id = UUID()
+    var profileSuggestion: ProfileSuggestion?
+}
+
 /// The EQ editor window: toolbar, interactive graph, band strip, bottom bar.
 struct EditorView: View {
-    static let importRequested = PassthroughSubject<Void, Never>()
+    static let importRequested = PassthroughSubject<ProfileSuggestion?, Never>()
+
+    var initialImportRequested = false
+    var initialProfileSuggestion: ProfileSuggestion?
 
     @EnvironmentObject var state: AppState
     @State private var selectedBandID: UUID?
-    @State private var showImportSheet = false
+    @State private var importPresentation: ImportPresentation?
     @State private var showSaveSheet = false
     @State private var saveName = ""
+    @State private var handledInitialImport = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,11 +31,18 @@ struct EditorView: View {
             Divider()
             bottomBar
         }
-        .sheet(isPresented: $showImportSheet) {
-            ImportSheet().environmentObject(state)
+        .sheet(item: $importPresentation) { presentation in
+            ImportSheet(profileSuggestion: presentation.profileSuggestion).environmentObject(state)
         }
         .sheet(isPresented: $showSaveSheet) { saveSheet }
-        .onReceive(Self.importRequested) { _ in showImportSheet = true }
+        .onReceive(Self.importRequested) { suggestion in
+            importPresentation = ImportPresentation(profileSuggestion: suggestion)
+        }
+        .onAppear {
+            guard initialImportRequested, !handledInitialImport else { return }
+            handledInitialImport = true
+            importPresentation = ImportPresentation(profileSuggestion: initialProfileSuggestion)
+        }
     }
 
     // MARK: - Toolbar
@@ -77,7 +93,7 @@ struct EditorView: View {
             Spacer()
 
             Button {
-                showImportSheet = true
+                importPresentation = ImportPresentation(profileSuggestion: nil)
             } label: {
                 Label("Import…", systemImage: "square.and.arrow.down")
             }

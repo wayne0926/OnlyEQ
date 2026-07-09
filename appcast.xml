@@ -3,22 +3,23 @@
     <channel>
         <title>OnlyEQ</title>
         <item>
-            <title>1.1.2</title>
-            <pubDate>Thu, 09 Jul 2026 12:58:12 -0700</pubDate>
+            <title>1.2.0</title>
+            <pubDate>Thu, 09 Jul 2026 14:41:08 -0700</pubDate>
             <link>https://github.com/zollans/OnlyEQ</link>
-            <sparkle:version>6</sparkle:version>
-            <sparkle:shortVersionString>1.1.2</sparkle:shortVersionString>
+            <sparkle:version>7</sparkle:version>
+            <sparkle:shortVersionString>1.2.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.4</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[# OnlyEQ 1.1.2
+            <description sparkle:format="markdown"><![CDATA[# OnlyEQ 1.2.0
 
-- Makes the editor spectrum display-linked and smoothly interpolated at 60 fps.
-- Keeps FFT analysis capped at 30 Hz and moves bar drawing into an isolated Core Animation layer, avoiding full SwiftUI editor layout on every frame.
-- Updates the peak meter at 60 Hz using cached text and shape layers, with no redraw when its displayed value is unchanged.
-- Makes EQ node dragging track the pointer immediately while capping model/audio updates at 60 Hz.
-- Coalesces working-preset persistence during dragging and flushes the final value at drag end or app shutdown.
-- Adds a side-effect-free editor profiling mode for performance regression checks.
+- Detects newly active Bluetooth and Bluetooth LE headphones that do not have a device profile.
+- Opens Browse Online automatically with the cleaned device model already searched.
+- Selects and fetches the strongest peqdb match for review, falling back to AutoEq when necessary.
+- Shows the detected device, preset curve, filter count, source, and alternatives before anything is applied.
+- Saves a confirmed preset and remembers it against the stable Core Audio device UID for future connections.
+- Suggests a profile only once per unrecognized device and includes a Settings toggle to disable suggestions.
+- Performs matching only when the output device changes, adding no ongoing audio or visualization CPU work.
 ]]></description>
-            <enclosure url="https://github.com/zollans/OnlyEQ/releases/download/v1.1.2/OnlyEQ.app.zip" length="2362639" type="application/octet-stream" sparkle:edSignature="6QbfYMxm/XLq3FWItD/WOO7ULgO72pfV2QNtAgHsoTjtGKJVgPTFkgq85c/XhmuRyuUrPmxZ4j2NZDTrEHWwAQ=="/>
+            <enclosure url="https://github.com/zollans/OnlyEQ/releases/download/v1.2.0/OnlyEQ.app.zip" length="2410001" type="application/octet-stream" sparkle:edSignature="yojmO4gzXjjSF0R5+G+R9vpSrd0d+yv7PZUN59gOKQUgvpnfVSKzrPOa3h1ztDZZ4Mr4JmjPP6MWBnnSJlYpAg=="/>
         </item>
     </channel>
 </rss>

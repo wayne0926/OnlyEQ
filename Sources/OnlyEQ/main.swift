@@ -21,7 +21,9 @@ if let flagIndex = CommandLine.arguments.firstIndex(of: "--screenshots") {
 
 // Opens the real editor view for a short, side-effect-free UI profiling run.
 // The engine stays off; the process exits automatically after 15 seconds.
-if CommandLine.arguments.contains("--editor-probe") {
+let editorProbe = CommandLine.arguments.contains("--editor-probe")
+let profileSuggestionProbe = CommandLine.arguments.contains("--profile-suggestion-probe")
+if editorProbe || profileSuggestionProbe {
     MainActor.assumeIsolated {
         AppState.screenshotMode = true
         let app = NSApplication.shared
@@ -39,7 +41,14 @@ if CommandLine.arguments.contains("--editor-probe") {
         )
         window.title = "OnlyEQ UI Probe"
         window.contentViewController = NSHostingController(
-            rootView: EditorView().environmentObject(state)
+            rootView: EditorView(
+                initialImportRequested: profileSuggestionProbe,
+                initialProfileSuggestion: profileSuggestionProbe ? ProfileSuggestion(
+                    deviceUID: "probe.bluetooth.headphones",
+                    deviceName: "Aaron’s WH-1000XM5 Stereo",
+                    searchQuery: "WH-1000XM5"
+                ) : nil
+            ).environmentObject(state)
         )
         window.center()
         window.makeKeyAndOrderFront(nil)
