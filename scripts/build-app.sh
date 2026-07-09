@@ -7,6 +7,8 @@ cd "$(dirname "$0")/.."
 
 CONFIG="${1:-debug}"
 APP="build/OnlyEQ.app"
+SPARKLE_ROOT=".build/artifacts/sparkle/Sparkle"
+SPARKLE_FRAMEWORK="$SPARKLE_ROOT/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
 
 if [ "$CONFIG" = "release" ]; then
     # CLT has no xcbuild, so multi-arch needs per-triple builds + lipo.
@@ -26,11 +28,21 @@ else
 fi
 
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp Resources/Info.plist "$APP/Contents/"
 cp "$BIN" "$APP/Contents/MacOS/OnlyEQ"
+# SwiftPM links binary frameworks through @rpath but does not know this custom
+# app bundle's Frameworks location. Add it before signing the bundle.
+install_name_tool -add_rpath '@executable_path/../Frameworks' "$APP/Contents/MacOS/OnlyEQ"
 [ -d "$RESOURCE_BUNDLE" ] && cp -R "$RESOURCE_BUNDLE" "$APP/Contents/Resources/"
 [ -f Resources/AppIcon.icns ] && cp Resources/AppIcon.icns "$APP/Contents/Resources/"
+if [ ! -d "$SPARKLE_FRAMEWORK" ]; then
+    echo "Sparkle framework not found at $SPARKLE_FRAMEWORK" >&2
+    exit 1
+fi
+# ditto preserves the framework's symlinks and nested helper signatures.
+ditto "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/Sparkle.framework"
+cp "$SPARKLE_ROOT/LICENSE" "$APP/Contents/Resources/Sparkle-LICENSE.txt"
 
 # Ad-hoc sign with an explicit identifier-based designated requirement. A plain
 # ad-hoc signature gets a cdhash-based requirement that changes on every build,

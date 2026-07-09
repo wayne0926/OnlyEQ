@@ -194,12 +194,14 @@ private struct SpectrumBarsView: View {
                 let bars = spectrum.bars()
                 guard !bars.isEmpty else { return }
                 let barWidth = size.width / CGFloat(bars.count)
+                var path = Path()
                 for (i, level) in bars.enumerated() {
                     let h = CGFloat(level) * size.height * style.heightScale
                     let rect = CGRect(x: CGFloat(i) * barWidth + 1, y: size.height - h,
                                       width: max(barWidth - 2, 1), height: h)
-                    ctx.fill(Path(rect), with: .color(.secondary.opacity(style.opacity)))
+                    path.addRect(rect)
                 }
+                ctx.fill(path, with: .color(.secondary.opacity(style.opacity)))
             }
         }
     }

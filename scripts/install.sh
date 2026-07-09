@@ -27,15 +27,14 @@ pkill -x OnlyEQ 2>/dev/null || true
 rm -rf /Applications/OnlyEQ.app
 ditto "$TMP/extract/OnlyEQ.app" /Applications/OnlyEQ.app
 
-# Not notarized: strip quarantine and re-sign ad hoc so Gatekeeper allows it.
-# Keep the identifier-based designated requirement — a plain ad-hoc signature
-# gets a per-build cdhash requirement, which makes TCC forget the System Audio
-# grant whenever the app updates.
+# Not notarized: strip quarantine so Gatekeeper allows the release's existing
+# signature. Do not recursively re-sign it here: Sparkle ships signed nested
+# helpers whose identifiers and entitlements must remain intact.
 xattr -dr com.apple.quarantine /Applications/OnlyEQ.app 2>/dev/null || true
-codesign --force --deep --sign - \
-    --identifier com.onlyeq.app \
-    --requirements '=designated => identifier "com.onlyeq.app"' \
-    /Applications/OnlyEQ.app >/dev/null 2>&1 || true
+codesign --verify --deep --strict /Applications/OnlyEQ.app >/dev/null 2>&1 || {
+  echo "Downloaded app failed code-signature verification." >&2
+  exit 1
+}
 
 open /Applications/OnlyEQ.app
 echo "✓ OnlyEQ installed — look for it in your menu bar."

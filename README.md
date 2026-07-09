@@ -23,6 +23,8 @@ git clone https://github.com/zollans/OnlyEQ && cd OnlyEQ
 
 Requires macOS 14.4 or newer. On first launch it asks for System Audio Recording permission — that's the tap. macOS shows the purple recording indicator while EQ is active; audio never leaves your machine.
 
+Starting with 1.1.0, OnlyEQ checks for signed updates automatically and installs them in the background. Right-click the menu-bar icon and choose **Check for Updates…** to check immediately. Versions 1.0.x need one final manual install of 1.1.0 before automatic updates are available.
+
 ## What it does
 
 <p align="center">
@@ -35,6 +37,7 @@ Requires macOS 14.4 or newer. On first launch it asks for System Audio Recording
 - Volume boost up to 200%, automatic preamp so boosted EQ doesn't clip, a limiter as a safety net, A/B compare, one-click bypass.
 - An exclude list for apps that handle their own audio (DAWs, Zoom).
 - Global hotkeys for toggling EQ and cycling output devices. Launch at login. That's it — one popover, one editor window, one settings window.
+- Signed automatic updates powered by [Sparkle](https://sparkle-project.org/).
 
 <p align="center">
   <img src="docs/screenshots/import.png" width="620" alt="OnlyEQ import sheet">
@@ -50,13 +53,14 @@ Trade-offs, honestly: the purple recording dot is always on while EQ runs, macOS
 
 ## Development
 
-Plain SwiftPM, no Xcode project, no dependencies:
+Plain SwiftPM with no Xcode project. Sparkle is the sole package dependency:
 
 ```sh
 swift run OnlyEQ --test               # self-test suite (importer + DSP)
 swift run OnlyEQ --engine-probe       # headless engine check, prints JSON
 swift run OnlyEQ --screenshots out/   # renders the README screenshots
 ./scripts/build-app.sh release        # universal binary release build
+./scripts/prepare-release.sh 1.1.0    # signed archive + appcast
 ```
 
 Tests run inside the binary because the Command Line Tools don't ship XCTest. Diagnostics land in `~/Library/Logs/OnlyEQ.log`.
