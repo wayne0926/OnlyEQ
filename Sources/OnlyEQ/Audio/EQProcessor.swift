@@ -21,18 +21,41 @@ final class EQProcessor {
     private var lock = os_unfair_lock()
 
     // Render-thread state (only touched on the audio thread).
-    private var states: [[BiquadState]] = []  // [channel][band]
+    private var states: [BiquadState] = []  // flattened [channel][band]
+    private var stateChannelCount = 0
+    private var stateBandCount = 0
     private var limiterEnvelope: Float = 0
+    private var limiterAttack = Float(exp(-1.0 / (0.001 * 48000)))
+    private var limiterRelease = Float(exp(-1.0 / (0.080 * 48000)))
     private(set) var sampleRate: Double = 48000
 
     /// Peak level (post-chain) for metering; read from any thread.
-    private let peakBits = OSAllocatedUnfairLock(initialState: Float(0))
+    private struct MeterState {
+        var peak: Float = 0
+        var isActive = false
+    }
+    private let meter = OSAllocatedUnfairLock(initialState: MeterState())
     var currentPeak: Float {
-        peakBits.withLock { let v = $0; $0 = 0; return v }
+        meter.withLock { state in
+            let value = state.peak
+            state.peak = 0
+            return value
+        }
     }
 
     func configure(sampleRate: Double) {
         self.sampleRate = sampleRate
+        limiterAttack = Float(exp(-1.0 / (0.001 * sampleRate)))
+        limiterRelease = Float(exp(-1.0 / (0.080 * sampleRate)))
+    }
+
+    /// Main/UI thread: the peak accumulator has no consumer while the editor
+    /// is hidden, so avoid a cross-thread lock on every render callback.
+    func setMeteringActive(_ active: Bool) {
+        meter.withLock { state in
+            state.isActive = active
+            if !active { state.peak = 0 }
+        }
     }
 
     /// Called from the UI/model thread whenever parameters change.
@@ -65,40 +88,62 @@ final class EQProcessor {
         if snap.bypassed { return }
 
         // (Re)size filter state to match topology.
-        if states.count != channels.count || states.first?.count != snap.coefficients.count {
-            states = Array(repeating: Array(repeating: BiquadState(), count: snap.coefficients.count), count: channels.count)
+        let channelCount = channels.count
+        let bandCount = snap.coefficients.count
+        if stateChannelCount != channelCount || stateBandCount != bandCount {
+            states = Array(repeating: BiquadState(), count: channelCount * bandCount)
+            stateChannelCount = channelCount
+            stateBandCount = bandCount
             limiterEnvelope = 0
         }
 
-        // Envelope coefficients: ~1 ms attack, ~80 ms release.
-        let attack = Float(exp(-1.0 / (0.001 * sampleRate)))
-        let release = Float(exp(-1.0 / (0.080 * sampleRate)))
+        let meteringActive = meter.withLockIfAvailable { $0.isActive } ?? false
         var peak: Float = 0
 
-        for frame in 0..<frameCount {
-            // Stereo-linked limiter: find the loudest post-EQ sample across channels.
-            var maxMag: Float = 0
-            for ch in 0..<channels.count {
-                var sample = channels[ch][frame] * snap.preampLinear
-                for (i, c) in snap.coefficients.enumerated() {
-                    sample = states[ch][i].process(sample, c)
+        // Work through raw buffers so mutating filter state does not trigger an
+        // Array copy-on-write uniqueness check for every sample and band.
+        channels.withUnsafeBufferPointer { channelBuffers in
+            states.withUnsafeMutableBufferPointer { stateBuffer in
+                snap.coefficients.withUnsafeBufferPointer { coefficientBuffer in
+                    let stateBase = stateBuffer.baseAddress
+                    let coefficientBase = coefficientBuffer.baseAddress
+
+                    for frame in 0..<frameCount {
+                        // Stereo-linked limiter: find the loudest post-EQ sample across channels.
+                        var maxMag: Float = 0
+                        for ch in 0..<channelCount {
+                            var sample = channelBuffers[ch][frame] * snap.preampLinear
+                            if bandCount > 0, let stateBase, let coefficientBase {
+                                let channelStates = stateBase + ch * bandCount
+                                for band in 0..<bandCount {
+                                    sample = channelStates[band].process(sample, coefficientBase[band])
+                                }
+                            }
+                            sample *= snap.outputGainLinear
+                            channelBuffers[ch][frame] = sample
+                            maxMag = max(maxMag, abs(sample))
+                        }
+                        if snap.limiterEnabled {
+                            let coefficient = maxMag > limiterEnvelope ? limiterAttack : limiterRelease
+                            limiterEnvelope = coefficient * limiterEnvelope + (1 - coefficient) * maxMag
+                            if limiterEnvelope > snap.limiterCeilingLinear {
+                                let gain = snap.limiterCeilingLinear / limiterEnvelope
+                                for ch in 0..<channelCount { channelBuffers[ch][frame] *= gain }
+                                maxMag *= gain
+                            }
+                        }
+                        if meteringActive { peak = max(peak, maxMag) }
+                    }
                 }
-                sample *= snap.outputGainLinear
-                channels[ch][frame] = sample
-                maxMag = max(maxMag, abs(sample))
             }
-            if snap.limiterEnabled {
-                let coeff = maxMag > limiterEnvelope ? attack : release
-                limiterEnvelope = coeff * limiterEnvelope + (1 - coeff) * maxMag
-                if limiterEnvelope > snap.limiterCeilingLinear {
-                    let g = snap.limiterCeilingLinear / limiterEnvelope
-                    for ch in 0..<channels.count { channels[ch][frame] *= g }
-                    maxMag *= g
-                }
-            }
-            peak = max(peak, maxMag)
         }
-        let framePeak = peak
-        peakBits.withLock { $0 = max($0, framePeak) }
+
+        if meteringActive {
+            let framePeak = peak
+            meter.withLockIfAvailable { state in
+                guard state.isActive else { return }
+                state.peak = max(state.peak, framePeak)
+            }
+        }
     }
 }

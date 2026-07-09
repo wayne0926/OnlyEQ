@@ -42,7 +42,10 @@ struct PopoverView: View {
             footer
         }
         .padding(14)
-        .frame(width: 360)
+        // Keep the host size stable when the permission banner replaces the
+        // curve. AppDelegate can then size the popover once instead of asking
+        // SwiftUI to propagate preferred-size changes on every spectrum frame.
+        .frame(width: 360, height: 410, alignment: .top)
     }
 
     // MARK: - Header

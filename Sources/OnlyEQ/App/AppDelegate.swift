@@ -1,11 +1,17 @@
 import AppKit
 import SwiftUI
 import CoreAudio
+import Sparkle
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
+    private let updaterController = SPUStandardUpdaterController(
+        startingUpdater: true,
+        updaterDelegate: nil,
+        userDriverDelegate: nil
+    )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.write("app: didFinishLaunching")
@@ -18,9 +24,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         popover.behavior = .transient
         popover.delegate = self
         let hosting = NSHostingController(rootView: PopoverView().environmentObject(state))
-        // Keep preferredContentSize in sync with the SwiftUI layout — without
-        // this the popover mis-sizes and can render clipped past the menu bar.
-        hosting.sizingOptions = .preferredContentSize
+        // PopoverView has a stable frame, so size the popover once. Continuously
+        // publishing preferredContentSize makes every spectrum tick remeasure
+        // and lay out the entire popover instead of redrawing just its Canvas.
+        hosting.sizingOptions = .standardBounds
         popover.contentViewController = hosting
         popover.contentSize = hosting.view.fittingSize
         Log.write("app: popover ready")
@@ -119,6 +126,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
+        let updates = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+        updates.target = self
+        menu.addItem(updates)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit OnlyEQ", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 
@@ -146,6 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func openEditor() { WindowManager.shared.showEditor() }
     @objc private func openImport() { WindowManager.shared.showEditor(importing: true) }
     @objc private func openSettings() { WindowManager.shared.showSettings() }
+    @objc private func checkForUpdates() { updaterController.checkForUpdates(nil) }
 }
 
 // Closing the popover only orders its window out — the hosting controller

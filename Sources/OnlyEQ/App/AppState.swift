@@ -20,7 +20,11 @@ final class AppState: ObservableObject {
     // MARK: - Published state
 
     @Published var isEnabled: Bool = UserDefaults.standard.object(forKey: "enabled") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(isEnabled, forKey: "enabled"); rebuildEngine() }
+        didSet {
+            UserDefaults.standard.set(isEnabled, forKey: "enabled")
+            rebuildEngine()
+            updateVisualizationState()
+        }
     }
 
     /// The working EQ (live-editable; may be an unsaved copy of a preset).
@@ -73,8 +77,8 @@ final class AppState: ObservableObject {
     /// The popover's content controller and the editor window both outlive
     /// their close (they're just ordered out), so spectrum/meter TimelineViews
     /// gate on these to stop ticking once nothing is visible.
-    @Published var popoverIsVisible = false
-    @Published var editorIsVisible = false
+    @Published var popoverIsVisible = false { didSet { updateVisualizationState() } }
+    @Published var editorIsVisible = false { didSet { updateVisualizationState() } }
 
     var effectivePreampDB: Double {
         autoPreampEnabled ? EQResponse.autoPreamp(bands: preset.bands) : preset.preampDB
@@ -127,6 +131,14 @@ final class AppState: ObservableObject {
             limiterCeilingDB: limiterCeilingDB,
             bypassed: bypassed || !isEnabled
         )
+    }
+
+    /// Keep visualization work off the realtime thread unless a consumer is
+    /// actually on screen. The editor alone owns the peak meter; either visible
+    /// surface can consume spectrum samples.
+    private func updateVisualizationState() {
+        engine.spectrum.setActive(isEnabled && (popoverIsVisible || editorIsVisible))
+        engine.processor.setMeteringActive(isEnabled && editorIsVisible)
     }
 
     private func startSilenceWatchdog() {

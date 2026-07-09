@@ -1,6 +1,7 @@
 import Foundation
 import CoreAudio
 import AudioToolbox
+import Accelerate
 
 /// System-wide EQ engine built on Core Audio process taps (macOS 14.4+).
 ///
@@ -35,8 +36,20 @@ final class ProcessTapEngine {
     private var aggregateID: AudioObjectID = 0
     private var ioProcID: AudioDeviceIOProcID?
     private var channelScratch: [UnsafeMutablePointer<Float>] = []
+    private struct InputChannel {
+        var pointer: UnsafeMutablePointer<Float>
+        var stride: Int
+    }
+    private var inputChannels: [InputChannel] = []
+    private var activeChannels: [UnsafeMutablePointer<Float>] = []
 
     var onStateChange: ((State) -> Void)?
+
+    init() {
+        inputChannels.reserveCapacity(8)
+        activeChannels.reserveCapacity(8)
+        channelScratch.reserveCapacity(8)
+    }
 
     // MARK: - Lifecycle
 
@@ -122,6 +135,11 @@ final class ProcessTapEngine {
             return
         }
 
+        // Allocate the normal stereo scratch path before the realtime callback
+        // starts. prepareScratch still handles unusual topologies defensively.
+        readIOBufferSize()
+        prepareScratch(channels: 2, frames: ioBufferFrames)
+
         status = AudioDeviceStart(aggregateID, ioProcID)
         guard status == noErr else {
             cleanup()
@@ -129,7 +147,6 @@ final class ProcessTapEngine {
             return
         }
 
-        readIOBufferSize()
         transition(to: .running)
     }
 
@@ -145,6 +162,7 @@ final class ProcessTapEngine {
 
     deinit {
         stop()
+        for pointer in channelScratch { pointer.deallocate() }
     }
 
     private func cleanup() {
@@ -201,21 +219,23 @@ final class ProcessTapEngine {
 
         // Gather input channel pointers (tap side). The tap delivers Float32;
         // buffers may be interleaved-stereo-in-one or split per channel.
-        var inChannels: [(ptr: UnsafeMutablePointer<Float>, stride: Int, count: Int)] = []
+        inputChannels.removeAll(keepingCapacity: true)
+        var frameCount = Int.max
         for buffer in inputList {
             guard let data = buffer.mData else { continue }
             let channelCount = max(Int(buffer.mNumberChannels), 1)
             let frames = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size / channelCount
             let floatPtr = data.assumingMemoryBound(to: Float.self)
+            frameCount = min(frameCount, frames)
             for ch in 0..<channelCount {
-                inChannels.append((floatPtr + ch, channelCount, frames))
+                inputChannels.append(InputChannel(pointer: floatPtr + ch, stride: channelCount))
             }
         }
-        guard let frameCount = inChannels.map(\.count).min(), frameCount > 0 else { return }
+        guard !inputChannels.isEmpty, frameCount != .max, frameCount > 0 else { return }
 
         if !hasReceivedAudio {
-            outer: for c in inChannels {
-                for i in 0..<min(frameCount, 64) where c.ptr[i * c.stride] != 0 {
+            outer: for channel in inputChannels {
+                for i in 0..<min(frameCount, 64) where channel.pointer[i * channel.stride] != 0 {
                     hasReceivedAudio = true
                     break outer
                 }
@@ -223,17 +243,21 @@ final class ProcessTapEngine {
         }
 
         // De-interleave into scratch, process, then write to the output buffers.
-        prepareScratch(channels: max(inChannels.count, 1), frames: frameCount)
-        for (i, c) in inChannels.enumerated() {
-            if c.stride == 1 {
-                channelScratch[i].update(from: c.ptr, count: frameCount)
+        prepareScratch(channels: inputChannels.count, frames: frameCount)
+        activeChannels.removeAll(keepingCapacity: true)
+        var zero: Float = 0
+        for (index, channel) in inputChannels.enumerated() {
+            let scratch = channelScratch[index]
+            if channel.stride == 1 {
+                scratch.update(from: channel.pointer, count: frameCount)
             } else {
-                for f in 0..<frameCount { channelScratch[i][f] = c.ptr[f * c.stride] }
+                vDSP_vsadd(channel.pointer, vDSP_Stride(channel.stride), &zero,
+                           scratch, 1, vDSP_Length(frameCount))
             }
+            activeChannels.append(scratch)
         }
-        let active = Array(channelScratch.prefix(inChannels.count))
-        processor.process(channels: active, frameCount: frameCount)
-        spectrum.push(channels: active, frameCount: frameCount)
+        processor.process(channels: activeChannels, frameCount: frameCount)
+        spectrum.push(channels: activeChannels, frameCount: frameCount)
 
         // Write processed audio out, cycling tap channels across device channels.
         var sourceIndex = 0
@@ -244,14 +268,17 @@ final class ProcessTapEngine {
             let floatPtr = data.assumingMemoryBound(to: Float.self)
             let n = min(frames, frameCount)
             for ch in 0..<channelCount {
-                let source = active[sourceIndex % active.count]
-                for f in 0..<n { floatPtr[f * channelCount + ch] = source[f] }
+                let source = activeChannels[sourceIndex % activeChannels.count]
+                if channelCount == 1 {
+                    floatPtr.update(from: source, count: n)
+                } else {
+                    vDSP_vsadd(source, 1, &zero, floatPtr + ch,
+                               vDSP_Stride(channelCount), vDSP_Length(n))
+                }
                 sourceIndex += 1
             }
             if frames > n {
-                for ch in 0..<channelCount {
-                    for f in n..<frames { floatPtr[f * channelCount + ch] = 0 }
-                }
+                vDSP_vclr(floatPtr + n * channelCount, 1, vDSP_Length((frames - n) * channelCount))
             }
         }
     }

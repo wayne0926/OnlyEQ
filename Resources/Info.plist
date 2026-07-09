@@ -9,9 +9,9 @@
 	<key>CFBundleIdentifier</key>
 	<string>com.onlyeq.app</string>
 	<key>CFBundleVersion</key>
-	<string>3</string>
+	<string>4</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.2</string>
+	<string>1.1.0</string>
 	<key>CFBundleExecutable</key>
 	<string>OnlyEQ</string>
 	<key>CFBundlePackageType</key>
@@ -26,6 +26,14 @@
 	<string>OnlyEQ captures system audio so it can apply EQ in real time. Audio never leaves your Mac.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Free and open — no license required.</string>
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/zollans/OnlyEQ/main/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>d1vSCptrf7SGcC7X14QhVcO47cVirp0YwFtQHrw8eao=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

@@ -128,11 +128,31 @@ enum TestRunner {
         let gainProc = EQProcessor()
         gainProc.configure(sampleRate: 48000)
         gainProc.update(bands: [], preampDB: -6.02, limiterEnabled: false, limiterCeilingDB: -1, bypassed: false)
+        gainProc.setMeteringActive(true)
         var dc = [Float](repeating: 1.0, count: 512)
         dc.withUnsafeMutableBufferPointer { buf in
             gainProc.process(channels: [buf.baseAddress!], frameCount: 512)
         }
         expect(abs(dc[100] - 0.5) < 0.01, "processor applies preamp gain")
+        expect(abs(gainProc.currentPeak - 0.5) < 0.01, "active peak meter reports processed level")
+        expect(gainProc.currentPeak == 0, "reading peak meter resets it")
+
+        gainProc.setMeteringActive(false)
+        dc.withUnsafeMutableBufferPointer { buf in
+            gainProc.process(channels: [buf.baseAddress!], frameCount: 512)
+        }
+        expect(gainProc.currentPeak == 0, "inactive peak meter does not accumulate")
+
+        let filterProc = EQProcessor()
+        filterProc.configure(sampleRate: 48000)
+        filterProc.update(bands: [EQBand(type: .peak, frequency: 1000, gain: 6, q: 1.41)],
+                          preampDB: 0, limiterEnabled: false, limiterCeilingDB: -1, bypassed: false)
+        var filteredSine = (0..<4800).map { Float(0.1 * sin(Double($0) * 2 * .pi * 1000 / 48000)) }
+        filteredSine.withUnsafeMutableBufferPointer { buffer in
+            filterProc.process(channels: [buffer.baseAddress!], frameCount: buffer.count)
+        }
+        let filteredPeak = filteredSine[2400...].map(abs).max() ?? 0
+        expect(abs(filteredPeak - 0.2) < 0.01, "processor applies biquad gain at center frequency")
 
         let limProc = EQProcessor()
         limProc.configure(sampleRate: 48000)
@@ -143,5 +163,23 @@ enum TestRunner {
         }
         let ceiling = pow(10, Float(-1.0) / 20) * 1.05
         expect(sine[2400...].map(abs).max()! <= ceiling, "limiter caps output at ceiling")
+
+        let analyzer = SpectrumAnalyzer()
+        analyzer.configure(sampleRate: 48000)
+        analyzer.setActive(true)
+        let exactBinFrequency = 42.0 * 48000 / 2048
+        var tone = (0..<2048).map { Float(sin(Double($0) * 2 * .pi * exactBinFrequency / 48000)) }
+        tone.withUnsafeMutableBufferPointer { buffer in
+            analyzer.push(channels: [buffer.baseAddress!], frameCount: buffer.count)
+        }
+        let bars = analyzer.bars()
+        let dominantBar = bars.indices.max(by: { bars[$0] < bars[$1] })
+        expect(bars.count == SpectrumAnalyzer.barCount, "spectrum emits configured bar count")
+        expect((26...28).contains(dominantBar ?? -1), "spectrum places 1 kHz tone in expected log band")
+        expect(bars.max() ?? 0 > 0.5, "spectrum reports an audible tone")
+
+        analyzer.setActive(false)
+        analyzer.setActive(true)
+        expect(analyzer.bars().allSatisfy { $0 == 0 }, "reactivating spectrum starts with a cleared ring")
     }
 }

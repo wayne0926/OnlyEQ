@@ -2,8 +2,11 @@ import Foundation
 
 /// RBJ Audio-EQ-Cookbook biquad coefficients, normalized (a0 == 1).
 struct BiquadCoefficients: Equatable {
-    var b0: Double = 1, b1: Double = 0, b2: Double = 0
-    var a1: Double = 0, a2: Double = 0
+    // The render path is Float32. Store its coefficients in the same format so
+    // every sample does five fused operations instead of five Double→Float
+    // conversions per enabled band.
+    var b0: Float = 1, b1: Float = 0, b2: Float = 0
+    var a1: Float = 0, a2: Float = 0
 
     static func make(type: FilterType, frequency: Double, gainDB: Double, q rawQ: Double, sampleRate: Double) -> BiquadCoefficients {
         let fc = min(max(frequency, 1), sampleRate * 0.499)
@@ -67,11 +70,14 @@ struct BiquadCoefficients: Equatable {
             a1 = -2 * cosw
             a2 = 1 - alpha
         }
-        return BiquadCoefficients(b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0)
+        return BiquadCoefficients(b0: Float(b0 / a0), b1: Float(b1 / a0), b2: Float(b2 / a0),
+                                  a1: Float(a1 / a0), a2: Float(a2 / a0))
     }
 
     /// Magnitude response in dB at `frequency` for a given sample rate.
     func magnitudeDB(at frequency: Double, sampleRate: Double) -> Double {
+        let b0 = Double(b0), b1 = Double(b1), b2 = Double(b2)
+        let a1 = Double(a1), a2 = Double(a2)
         let w = 2.0 * Double.pi * frequency / sampleRate
         // |H(e^jw)|^2 = (b0^2 + b1^2 + b2^2 + 2(b0b1 + b1b2)cos w + 2 b0b2 cos 2w) /
         //               (1 + a1^2 + a2^2 + 2(a1 + a1a2)cos w + 2 a2 cos 2w)
@@ -89,9 +95,9 @@ struct BiquadState {
 
     @inline(__always)
     mutating func process(_ x: Float, _ c: BiquadCoefficients) -> Float {
-        let y = Float(c.b0) * x + z1
-        z1 = Float(c.b1) * x - Float(c.a1) * y + z2
-        z2 = Float(c.b2) * x - Float(c.a2) * y
+        let y = c.b0 * x + z1
+        z1 = c.b1 * x - c.a1 * y + z2
+        z2 = c.b2 * x - c.a2 * y
         return y
     }
 }
