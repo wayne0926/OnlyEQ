@@ -181,5 +181,14 @@ enum TestRunner {
         analyzer.setActive(false)
         analyzer.setActive(true)
         expect(analyzer.bars().allSatisfy { $0 == 0 }, "reactivating spectrum starts with a cleared ring")
+
+        // Bluetooth device-name cleanup and deterministic catalog ranking.
+        expect(HeadphoneNameMatcher.searchQuery(for: "Aaron’s WH-1000XM5 Stereo") == "WH-1000XM5",
+               "headphone matcher strips owner and Bluetooth noise")
+        expect(HeadphoneNameMatcher.searchQuery(for: "LE_AirPods Pro") == "AirPods Pro",
+               "headphone matcher strips Bluetooth LE prefix")
+        expect(HeadphoneNameMatcher.score(query: "WH-1000XM5", candidate: "Sony WH-1000XM5")
+               > HeadphoneNameMatcher.score(query: "WH-1000XM5", candidate: "Sony WH-1000XM4"),
+               "headphone matcher prioritizes exact model number")
     }
 }

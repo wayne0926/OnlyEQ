@@ -18,6 +18,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.setActivationPolicy(.accessory)
 
         let state = AppState.shared
+        state.onProfileSuggestion = { suggestion in
+            WindowManager.shared.showEditor(importing: true, profileSuggestion: suggestion)
+        }
         Log.write("app: state ready")
 
         popover = NSPopover()
@@ -183,7 +186,8 @@ final class WindowManager {
     private var settingsWindow: NSWindow?
     private var onboardingWindow: NSWindow?
 
-    func showEditor(importing: Bool = false) {
+    func showEditor(importing: Bool = false, profileSuggestion: ProfileSuggestion? = nil) {
+        let isCreatingWindow = editorWindow == nil
         if editorWindow == nil {
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 840, height: 560),
@@ -194,7 +198,9 @@ final class WindowManager {
             window.minSize = NSSize(width: 720, height: 480)
             window.isReleasedWhenClosed = false
             window.contentViewController = NSHostingController(
-                rootView: EditorView().environmentObject(AppState.shared)
+                rootView: EditorView(initialImportRequested: importing,
+                                     initialProfileSuggestion: profileSuggestion)
+                    .environmentObject(AppState.shared)
             )
             // Restore the saved frame if there is one; otherwise center.
             if !window.setFrameUsingName("EditorWindow") { window.center() }
@@ -213,9 +219,11 @@ final class WindowManager {
             }
             editorWindow = window
         }
-        if importing { EditorView.importRequested.send() }
         editorWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        if importing, !isCreatingWindow {
+            EditorView.importRequested.send(profileSuggestion)
+        }
     }
 
     func showSettings() {

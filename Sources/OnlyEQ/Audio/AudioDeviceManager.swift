@@ -8,6 +8,11 @@ struct AudioOutputDevice: Identifiable, Hashable {
     var name: String
     var transportType: UInt32
 
+    var isBluetooth: Bool {
+        transportType == kAudioDeviceTransportTypeBluetooth
+            || transportType == kAudioDeviceTransportTypeBluetoothLE
+    }
+
     var icon: String {
         // The device name is a better signal than the transport (e.g. the
         // 3.5 mm jack reports transport "built-in" but is named "External Headphones").

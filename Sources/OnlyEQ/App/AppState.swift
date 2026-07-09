@@ -17,6 +17,10 @@ final class AppState: ObservableObject {
     let store = PresetStore()
     let onlineDB = OnlineDatabase()
 
+    /// Installed by the app delegate so device detection can request UI without
+    /// coupling the audio/state layer to a particular window implementation.
+    var onProfileSuggestion: ((ProfileSuggestion) -> Void)?
+
     // MARK: - Published state
 
     @Published var isEnabled: Bool = UserDefaults.standard.object(forKey: "enabled") as? Bool ?? true {
@@ -66,6 +70,10 @@ final class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(bufferFrames, forKey: "bufferFrames"); engine.setIOBufferFrames(bufferFrames) }
     }
 
+    @Published var autoSuggestHeadphoneProfiles: Bool = UserDefaults.standard.object(forKey: "autoSuggestHeadphoneProfiles") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(autoSuggestHeadphoneProfiles, forKey: "autoSuggestHeadphoneProfiles") }
+    }
+
     /// A/B comparison slots.
     @Published var abSlot: Int = 0
     private var abPresets: [EQPreset?] = [nil, nil]
@@ -89,6 +97,7 @@ final class AppState: ObservableObject {
     private var deviceListenerInstalled = false
     private var silenceCheckTimer: Timer?
     private var pendingPresetPersistence: DispatchWorkItem?
+    private var suggestedDeviceUIDs = Set(UserDefaults.standard.stringArray(forKey: "profileSuggestion.seenDeviceUIDs") ?? [])
 
     /// Sticky per-session flag: once the tap has delivered audio we know the
     /// permission is granted, so engine restarts (device switches, settings
@@ -202,6 +211,24 @@ final class AppState: ObservableObject {
         refreshDevices()
         if isEnabled { rebuildEngine() }
         applyDeviceProfileIfNeeded()
+        suggestProfileForCurrentDeviceIfNeeded()
+    }
+
+    private func suggestProfileForCurrentDeviceIfNeeded() {
+        guard UserDefaults.standard.bool(forKey: "onboarded"),
+              autoSuggestHeadphoneProfiles,
+              let device = currentDevice,
+              device.isBluetooth,
+              store.deviceProfiles[device.uid] == nil,
+              !suggestedDeviceUIDs.contains(device.uid),
+              let onProfileSuggestion else { return }
+
+        let query = HeadphoneNameMatcher.searchQuery(for: device.name)
+        guard !query.isEmpty else { return }
+        suggestedDeviceUIDs.insert(device.uid)
+        UserDefaults.standard.set(Array(suggestedDeviceUIDs), forKey: "profileSuggestion.seenDeviceUIDs")
+        onProfileSuggestion(ProfileSuggestion(deviceUID: device.uid, deviceName: device.name,
+                                              searchQuery: query))
     }
 
     private func applyDeviceProfileIfNeeded() {
@@ -238,6 +265,16 @@ final class AppState: ObservableObject {
         store.save(toSave)
         preset = toSave
         presetWasAutoApplied = false
+    }
+
+    func assignSuggestedPreset(_ preset: EQPreset, to suggestion: ProfileSuggestion) {
+        store.save(preset)
+        store.setProfile(deviceUID: suggestion.deviceUID, deviceName: suggestion.deviceName,
+                         preset: preset, autoApply: true)
+        if currentDevice?.uid == suggestion.deviceUID {
+            self.preset = preset
+            presetWasAutoApplied = true
+        }
     }
 
     // MARK: - A/B

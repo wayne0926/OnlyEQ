@@ -22,6 +22,7 @@ struct SettingsView: View {
 // MARK: - General
 
 struct GeneralSettings: View {
+    @EnvironmentObject var state: AppState
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @AppStorage("showLatency") private var showLatency = true
 
@@ -43,6 +44,11 @@ struct GeneralSettings: View {
             Toggle(isOn: $showLatency) {
                 Text("Show latency in popover")
                 Text("Display system audio latency in the popover.")
+            }
+
+            Toggle(isOn: $state.autoSuggestHeadphoneProfiles) {
+                Text("Suggest profiles for new Bluetooth headphones")
+                Text("Open preset search when an unrecognized Bluetooth output becomes active.")
             }
 
             Section {
