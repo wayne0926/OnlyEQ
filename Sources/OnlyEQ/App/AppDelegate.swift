@@ -131,8 +131,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown]
-        ) { [weak self] _ in
-            Task { @MainActor in self?.hideMenuPanel() }
+        ) { [weak self] event in
+            // A status-item click reaches this monitor as the window server's
+            // copy of the mouseDown (event.window == nil) before the button's
+            // action fires on mouse-up. Hiding here would make togglePopover()
+            // reopen the panel on the same click, so let the action own the
+            // toggle for clicks on the icon itself. Windowless events report
+            // locationInWindow in screen coordinates; the live cursor position
+            // would already have moved on if the click is followed by a flick.
+            let location = event.locationInWindow
+            Task { @MainActor in
+                guard let self else { return }
+                if let statusWindow = self.statusItem.button?.window,
+                   statusWindow.frame.contains(location) { return }
+                self.hideMenuPanel()
+            }
         }
 
         workspaceActivationObserver = NSWorkspace.shared.notificationCenter.addObserver(
